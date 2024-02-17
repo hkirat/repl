@@ -22,21 +22,23 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
         if (!listedObjects.Contents || listedObjects.Contents.length === 0) return;
         
         // Copy each object to the new location
-        // We're doing it sequentially here, but you can use Promises.all to speed it up
-        // $25 bounty to the first person who submits a PR with this change
-        for (const object of listedObjects.Contents) {
-            if (!object.Key) continue;
+        // We're doing it parallely here, using promise.all()
+        await Promise.all(listedObjects.Contents.map(async (object) => {
+            if (!object.Key) return;
             let destinationKey = object.Key.replace(sourcePrefix, destinationPrefix);
             let copyParams = {
                 Bucket: process.env.S3_BUCKET ?? "",
                 CopySource: `${process.env.S3_BUCKET}/${object.Key}`,
                 Key: destinationKey
             };
-            console.log(copyParams)
 
-            await s3.copyObject(copyParams).promise();
-            console.log(`Copied ${object.Key} to ${destinationKey}`);
-        }
+            console.log(copyParams);
+
+            // Return the promise from s3.copyObject
+            return s3.copyObject(copyParams).promise().then(() => {
+                console.log(`Copied ${object.Key} to ${destinationKey}`);
+            });
+        }));
 
         // Check if the list was truncated and continue copying if necessary
         if (listedObjects.IsTruncated) {
