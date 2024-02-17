@@ -43,13 +43,14 @@ spec:
             - name: workspace-volume
               mountPath: /workspace
           resources:
-            # Bounty $25 Use ephemeral-storage to add space limits here
             requests:
               cpu: "1"
               memory: "1Gi"
+              ephemeral-storage: "1Gi"
             limits:
               cpu: "1"
               memory: "1Gi"
+              ephemeral-storage: "2Gi"
 
 ---
 apiVersion: v1
