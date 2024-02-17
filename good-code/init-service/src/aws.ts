@@ -34,10 +34,8 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
 
             console.log(copyParams);
 
-            // Return the promise from s3.copyObject
-            return s3.copyObject(copyParams).promise().then(() => {
-                console.log(`Copied ${object.Key} to ${destinationKey}`);
-            });
+            await s3.copyObject(copyParams).promise();
+            console.log(`Copied ${object.Key} to ${destinationKey}`);
         }));
 
         // Check if the list was truncated and continue copying if necessary
