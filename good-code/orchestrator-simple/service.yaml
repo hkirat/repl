@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service_name
+  labels:
+    app: service_name
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service_name
+  template:
+    metadata:
+      labels:
+        app: service_name
+    spec:
+      volumes:
+        - name: workspace-volume
+          emptyDir: {}
+      initContainers:
+        - name: copy-s3-resources
+          image: amazon/aws-cli
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              aws s3 cp s3://repl/code/service_name/ /workspace/ --recursive &&
+              echo "Resources copied from S3";
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: "your_aws_key_id"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "your_aws_secret"
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+      containers:
+        - name: runner
+          image: 100xdevs/runner:latest
+          ports:
+            - containerPort: 3001
+            - containerPort: 3000
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+          resources:
+            # Bounty $25 Use ephemeral-storage to add space limits here
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service_name
+spec:
+  selector:
+    app: service_name
+  ports:
+    - protocol: TCP
+      name: ws
+      port: 3001
+      targetPort: 3001
+    - protocol: TCP
+      name: user
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: service_name
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: service_name.peetcode.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: service_name
+            port:
+              number: 3001
+  - host: service_name.autogpt-cloud.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: service_name
+            port:
+              number: 3000 
