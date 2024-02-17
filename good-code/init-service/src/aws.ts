@@ -1,4 +1,6 @@
-import { S3 } from "aws-sdk"
+import { AWSError, S3 } from "aws-sdk"
+import { CopyObjectOutput } from "aws-sdk/clients/s3";
+import { PromiseResult } from "aws-sdk/lib/request";
 import fs from "fs";
 import path from "path";
 
@@ -24,6 +26,9 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
         // Copy each object to the new location
         // We're doing it sequentially here, but you can use Promises.all to speed it up
         // $25 bounty to the first person who submits a PR with this change
+
+        const filesToBeCopied: Promise<PromiseResult<CopyObjectOutput, AWSError>>[] = [];
+
         for (const object of listedObjects.Contents) {
             if (!object.Key) continue;
             let destinationKey = object.Key.replace(sourcePrefix, destinationPrefix);
@@ -34,9 +39,12 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
             };
             console.log(copyParams)
 
-            await s3.copyObject(copyParams).promise();
+            filesToBeCopied.push(s3.copyObject(copyParams).promise());
             console.log(`Copied ${object.Key} to ${destinationKey}`);
         }
+
+        const res =  await Promise.allSettled(filesToBeCopied);
+        console.log(res);
 
         // Check if the list was truncated and continue copying if necessary
         if (listedObjects.IsTruncated) {
