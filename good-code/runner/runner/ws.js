@@ -19,6 +19,16 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = require("./fs");
 const pty_1 = require("./pty");
 const terminalManager = new pty_1.TerminalManager();
+
+// Throttling 
+const THROTTLE_DELAY = 500;
+
+// send diff to the client    
+function sendDiff(socket, filePath, oldContent, newContent) {
+    const changes = diff.diffLines(oldContent, newContent);
+    socket.emit('contentDiff', { path: filePath, changes });
+}
+
 function initWs(httpServer) {
     const io = new socket_io_1.Server(httpServer, {
         cors: {
@@ -56,9 +66,21 @@ function initHandlers(socket, replId) {
         const data = yield (0, fs_1.fetchFileContent)(fullPath);
         callback(data);
     }));
-    // TODO: contents should be diff, not full file
-    // Should be validated for size
-    // Should be throttled before updating S3 (or use an S3 mount)
+    
+    socket.on("updateContent", async ({ path: filePath, content }) => {
+        const fullPath = path.join(__dirname, `/workspace/${replId}/${filePath}`);
+        const oldContent = await fs_1.fetchFileContent(fullPath);
+        // Validate content size
+        if (content.length > MAX_CONTENT_SIZE) {
+            console.error(`Content size exceeds maximum allowed size for ${filePath}`);
+            return;
+        }
+        await new Promise(resolve => setTimeout(resolve, THROTTLE_DELAY));
+        await fs_1.saveFile(fullPath, content);
+        sendDiff(socket, filePath, oldContent, content);
+        await aws_1.saveToS3(`code/${replId}`, filePath, content);
+    });
+
     socket.on("updateContent", ({ path: filePath, content }) => __awaiter(this, void 0, void 0, function* () {
         const fullPath = path_1.default.join(__dirname, `/workspace/${replId}/${filePath}`);
         yield (0, fs_1.saveFile)(fullPath, content);
