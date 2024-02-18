@@ -34,24 +34,22 @@ export const fetchS3Folder = async (prefix: string, localPath: string): Promise<
     }
 
     const response = await s3.listObjectsV2(params).promise()
-    // Bounty $25 to make this function run parallelly
-    if (response.Contents) {
-        const s3FileCopyPromises: Promise<void>[] = [];
 
-        for (const file of response.Contents) {
-            const s3Key = file.Key
-            if (s3Key) {
-                const localFilePath = `${localPath}/${s3Key.replace(prefix, "")}`;
-                const s3FileCopyPromise = getAndWriteS3ObjectToFS({
-                    s3Key: s3Key,
-                    localFilePath: localFilePath
-                })
-                s3FileCopyPromises.push(s3FileCopyPromise)
-            }
+    if (response.Contents) {
+        const s3Keys = response.Contents.map(c => c.Key).filter((key): key is string => !!key);
+
+        const s3FileCopyPromises = s3Keys.map(async (s3Key) => {
+            const localFilePath = `${localPath}/${s3Key.replace(prefix, "")}`;
+            await getAndWriteS3ObjectToFS({
+                s3Key: s3Key,
+                localFilePath: localFilePath
+            })
         }
+        )
 
         await Promise.all(s3FileCopyPromises)
     }
+
 }
 
 export async function copyS3Folder(sourcePrefix: string, destinationPrefix: string, continuationToken?: string): Promise<void> {
