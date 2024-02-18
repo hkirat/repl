@@ -1,23 +1,24 @@
 import { Server, Socket } from "socket.io";
-import { Server as HttpServer } from "http";
+import { Server as HttpServer } from "http";
 import { fetchS3Folder, saveToS3 } from "./aws";
 import path from "path";
 import { fetchDir, fetchFileContent, saveFile } from "./fs";
 import { TerminalManager } from "./pty";
+import { diff_match_patch } from "diff-match-patch";
 
 const terminalManager = new TerminalManager();
+const dmp = new diff_match_patch();
 
 export function initWs(httpServer: HttpServer) {
     const io = new Server(httpServer, {
         cors: {
-            // Should restrict this more!
             origin: "*",
             methods: ["GET", "POST"],
         },
     });
-      
+
     io.on("connection", async (socket) => {
-        // Auth checks should happen here
+        // Auth checks
         const replId = socket.handshake.query.roomId as string;
 
         if (!replId) {
@@ -53,25 +54,40 @@ function initHandlers(socket: Socket, replId: string) {
         callback(data);
     });
 
-    // TODO: contents should be diff, not full file
-    // Should be validated for size
-    // Should be throttled before updating S3 (or use an S3 mount)
     socket.on("updateContent", async ({ path: filePath, content }: { path: string, content: string }) => {
         const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
-        await saveFile(fullPath, content);
-        await saveToS3(`code/${replId}`, filePath, content);
+        const existingContent = await fetchFileContent(fullPath);
+        const patches = dmp.patch_make(existingContent, content);
+        const patchedContent = dmp.patch_apply(patches, existingContent)[0];
+        await saveFile(fullPath, patchedContent);
+        await saveToS3(`code/${replId}`, filePath, patchedContent);
     });
 
     socket.on("requestTerminal", async () => {
         terminalManager.createPty(socket.id, replId, (data, id) => {
             socket.emit('terminal', {
-                data: Buffer.from(data,"utf-8")
+                data: Buffer.from(data, "utf-8")
             });
         });
     });
-    
+
     socket.on("terminalData", async ({ data }: { data: string, terminalId: number }) => {
         terminalManager.write(socket.id, data);
     });
 
+    // Throttle updates to S3
+    let canUpdateS3 = true;
+    socket.on("updateContent", async ({ path: filePath, content }: { path: string, content: string }) => {
+        if (!canUpdateS3) return;
+        canUpdateS3 = false;
+        setTimeout(() => {
+            canUpdateS3 = true;
+        }, 1000);
+        const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
+        const existingContent = await fetchFileContent(fullPath);
+        const patches = dmp.patch_make(existingContent, content);
+        const patchedContent = dmp.patch_apply(patches, existingContent)[0];
+        await saveFile(fullPath, patchedContent);
+        await saveToS3(`code/${replId}`, filePath, patchedContent);
+    });
 }
