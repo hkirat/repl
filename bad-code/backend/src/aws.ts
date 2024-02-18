@@ -37,7 +37,6 @@ export const fetchS3Folder = async (key: string, localPath: string): Promise<voi
 
 export async function copyS3Folder(sourcePrefix: string, destinationPrefix: string, continuationToken?: string): Promise<void> {
     try {
-        // List all objects in the source folder
         const listParams = {
             Bucket: process.env.S3_BUCKET ?? "",
             Prefix: sourcePrefix,
@@ -47,30 +46,32 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
         const listedObjects = await s3.listObjectsV2(listParams).promise();
 
         if (!listedObjects.Contents || listedObjects.Contents.length === 0) return;
-        
-        // Copy each object to the new location
-        // Bounty $25 to make this function run parallelly
+
+        const getPromises: Promise<any>[] = [];
+
         for (const object of listedObjects.Contents) {
             if (!object.Key) continue;
             let destinationKey = object.Key.replace(sourcePrefix, destinationPrefix);
-            let copyParams = {
+            let getParams = {
                 Bucket: process.env.S3_BUCKET ?? "",
                 CopySource: `${process.env.S3_BUCKET}/${object.Key}`,
                 Key: destinationKey
             };
-            console.log(copyParams)
+            console.log(getParams)
 
-            await s3.copyObject(copyParams).promise();
-            console.log(`Copied ${object.Key} to ${destinationKey}`);
+            getPromises.push(s3.copyObject(getParams).promise().then(() => {
+                console.log(`Copied ${object.Key} to ${destinationKey}`);
+            }));
         }
 
-        // Check if the list was truncated and continue copying if necessary
+        await Promise.all(getPromises);
+
         if (listedObjects.IsTruncated) {
             listParams.ContinuationToken = listedObjects.NextContinuationToken;
-            await copyS3Folder(sourcePrefix, destinationPrefix, continuationToken);
+            await getS3Folder(sourcePrefix, destinationPrefix, continuationToken);
         }
     } catch (error) {
-        console.error('Error copying folder:', error);
+        console.error('Error occured while copying the folder:', error);
     }
 }
 
