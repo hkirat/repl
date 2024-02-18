@@ -7,31 +7,50 @@ const s3 = new S3({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
     endpoint: process.env.S3_ENDPOINT
 })
-export const fetchS3Folder = async (key: string, localPath: string): Promise<void> => {
+
+const getAndWriteS3ObjectToFS = async (options: {
+    s3Key: string,
+    localFilePath: string,
+}) => {
+    const { localFilePath, s3Key } = options;
+
+    const getObjectParams = {
+        Bucket: process.env.S3_BUCKET ?? "",
+        Key: s3Key
+    }
+
+    const data = await s3.getObject(getObjectParams).promise()
+    if (data.Body) {
+        const fileData = data.Body
+        // @ts-ignore
+        await writeFile(localFilePath, fileData)
+    }
+}
+
+export const fetchS3Folder = async (prefix: string, localPath: string): Promise<void> => {
     const params = {
         Bucket: process.env.S3_BUCKET ?? "",
-        Prefix: key
+        Prefix: prefix
     }
 
     const response = await s3.listObjectsV2(params).promise()
     // Bounty $25 to make this function run parallelly
     if (response.Contents) {
+        const s3FileCopyPromises: Promise<void>[] = [];
+
         for (const file of response.Contents) {
-            const fileKey = file.Key
-            if (fileKey) {
-                const params = {
-                    Bucket: process.env.S3_BUCKET ?? "",
-                    Key: fileKey
-                }
-                const data = await s3.getObject(params).promise()
-                if (data.Body) {
-                    const fileData = data.Body
-                    const filePath = `${localPath}/${fileKey.replace(key, "")}`
-                    //@ts-ignore
-                    await writeFile(filePath, fileData)
-                }
+            const s3Key = file.Key
+            if (s3Key) {
+                const localFilePath = `${localPath}/${s3Key.replace(prefix, "")}`;
+                const s3FileCopyPromise = getAndWriteS3ObjectToFS({
+                    s3Key: s3Key,
+                    localFilePath: localFilePath
+                })
+                s3FileCopyPromises.push(s3FileCopyPromise)
             }
         }
+
+        await Promise.all(s3FileCopyPromises)
     }
 }
 
@@ -47,7 +66,7 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
         const listedObjects = await s3.listObjectsV2(listParams).promise();
 
         if (!listedObjects.Contents || listedObjects.Contents.length === 0) return;
-        
+
         // Copy each object to the new location
         // Bounty $25 to make this function run parallelly
         for (const object of listedObjects.Contents) {
