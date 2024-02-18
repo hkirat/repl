@@ -2,8 +2,9 @@ import { Server, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import { fetchS3Folder, saveToS3 } from "./aws";
 import path from "path";
-import { fetchDir, fetchFileContent, saveFile } from "./fs";
+import { fetchDir, fetchFileContent, saveFile, } from "./fs";
 import { TerminalManager } from "./pty";
+import fs from "fs";
 
 const terminalManager = new TerminalManager();
 
@@ -39,39 +40,45 @@ function initHandlers(socket: Socket, replId: string) {
 
     socket.on("disconnect", () => {
         console.log("user disconnected");
-    });
 
-    socket.on("fetchDir", async (dir: string, callback) => {
-        const dirPath = path.join(__dirname, `../tmp/${replId}/${dir}`);
-        const contents = await fetchDir(dirPath, dir);
-        callback(contents);
-    });
+        const directoryPath = 'path.join(__dirname, `../tmp/${replId}';
+        fs.unlink(directoryPath, (err: any) => {
+            if (err) throw err;
+            console.log(`${directoryPath} deleted on client disconnect`);
+        });
 
-    socket.on("fetchContent", async ({ path: filePath }: { path: string }, callback) => {
-        const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
-        const data = await fetchFileContent(fullPath);
-        callback(data);
-    });
+        socket.on("fetchDir", async (dir: string, callback) => {
+            const dirPath = path.join(__dirname, `../tmp/${replId}/${dir}`);
+            const contents = await fetchDir(dirPath, dir);
+            callback(contents);
+        });
 
-    // TODO: contents should be diff, not full file
-    // Should be validated for size
-    // Should be throttled before updating S3 (or use an S3 mount)
-    socket.on("updateContent", async ({ path: filePath, content }: { path: string, content: string }) => {
-        const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
-        await saveFile(fullPath, content);
-        await saveToS3(`code/${replId}`, filePath, content);
-    });
+        socket.on("fetchContent", async ({ path: filePath }: { path: string }, callback) => {
+            const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
+            const data = await fetchFileContent(fullPath);
+            callback(data);
+        });
 
-    socket.on("requestTerminal", async () => {
-        terminalManager.createPty(socket.id, replId, (data, id) => {
-            socket.emit('terminal', {
-                data: Buffer.from(data,"utf-8")
+        // TODO: contents should be diff, not full file
+        // Should be validated for size
+        // Should be throttled before updating S3 (or use an S3 mount)
+        socket.on("updateContent", async ({ path: filePath, content }: { path: string, content: string }) => {
+            const fullPath = path.join(__dirname, `../tmp/${replId}/${filePath}`);
+            await saveFile(fullPath, content);
+            await saveToS3(`code/${replId}`, filePath, content);
+        });
+
+        socket.on("requestTerminal", async () => {
+            terminalManager.createPty(socket.id, replId, (data, id) => {
+                socket.emit('terminal', {
+                    data: Buffer.from(data, "utf-8")
+                });
             });
         });
-    });
     
-    socket.on("terminalData", async ({ data }: { data: string, terminalId: number }) => {
-        terminalManager.write(socket.id, data);
-    });
+        socket.on("terminalData", async ({ data }: { data: string, terminalId: number }) => {
+            terminalManager.write(socket.id, data);
+        });
 
-}
+    }
+)};
