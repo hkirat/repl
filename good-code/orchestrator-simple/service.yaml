@@ -50,6 +50,7 @@ spec:
             limits:
               cpu: "1"
               memory: "1Gi"
+              ephemeral-storage: "5Gi"
 
 ---
 apiVersion: v1
