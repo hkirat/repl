@@ -8,32 +8,39 @@ const s3 = new S3({
     endpoint: process.env.S3_ENDPOINT
 })
 export const fetchS3Folder = async (key: string, localPath: string): Promise<void> => {
-    const params = {
-        Bucket: process.env.S3_BUCKET ?? "",
-        Prefix: key
-    }
+    try {
+        const params = {
+            Bucket: process.env.S3_BUCKET ?? "",
+            Prefix: key
+        };
 
-    const response = await s3.listObjectsV2(params).promise()
-    // Bounty $25 to make this function run parallelly
-    if (response.Contents) {
-        for (const file of response.Contents) {
-            const fileKey = file.Key
-            if (fileKey) {
-                const params = {
-                    Bucket: process.env.S3_BUCKET ?? "",
-                    Key: fileKey
+        const response = await s3.listObjectsV2(params).promise();
+        if (response.Contents) {
+            // Use Promise.all to run getObject operations in parallel
+            await Promise.all(response.Contents.map(async (file) => {
+                const fileKey = file.Key;
+                if (fileKey) {
+                    const getObjectParams = {
+                        Bucket: process.env.S3_BUCKET ?? "",
+                        Key: fileKey
+                    };
+
+                    const data = await s3.getObject(getObjectParams).promise();
+                    if (data.Body) {
+                        const fileData = data.Body;
+                        const filePath = `${localPath}/${fileKey.replace(key, "")}`;
+                        
+                        await writeFile(filePath, fileData);
+
+                        console.log(`Downloaded ${fileKey} to ${filePath}`);
+                    }
                 }
-                const data = await s3.getObject(params).promise()
-                if (data.Body) {
-                    const fileData = data.Body
-                    const filePath = `${localPath}/${fileKey.replace(key, "")}`
-                    //@ts-ignore
-                    await writeFile(filePath, fileData)
-                }
-            }
+            }));
         }
+    } catch (error) {
+        console.error('Error fetching folder:', error);
     }
-}
+};
 
 export async function copyS3Folder(sourcePrefix: string, destinationPrefix: string, continuationToken?: string): Promise<void> {
     try {
@@ -49,20 +56,20 @@ export async function copyS3Folder(sourcePrefix: string, destinationPrefix: stri
         if (!listedObjects.Contents || listedObjects.Contents.length === 0) return;
         
         // Copy each object to the new location
-        // Bounty $25 to make this function run parallelly
-        for (const object of listedObjects.Contents) {
-            if (!object.Key) continue;
+        await Promise.all(listedObjects.Contents.map(async (object) => {
+            if (!object.Key) return;
             let destinationKey = object.Key.replace(sourcePrefix, destinationPrefix);
             let copyParams = {
                 Bucket: process.env.S3_BUCKET ?? "",
                 CopySource: `${process.env.S3_BUCKET}/${object.Key}`,
                 Key: destinationKey
             };
-            console.log(copyParams)
+
+            console.log(copyParams);
 
             await s3.copyObject(copyParams).promise();
             console.log(`Copied ${object.Key} to ${destinationKey}`);
-        }
+        }));
 
         // Check if the list was truncated and continue copying if necessary
         if (listedObjects.IsTruncated) {
