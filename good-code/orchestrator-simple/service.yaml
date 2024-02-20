@@ -38,6 +38,22 @@ spec:
           image: 100xdevs/runner:latest
           ports:
             - containerPort: 3001
+          volumeMounts:
+            - name: workspace-volume
+              mountPath: /workspace
+          resources:
+            # Bounty $25 Use ephemeral-storage to add space limits here
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+        # This container will be accessed by end user
+        - name: worker
+          image: 100xdevs/worker:latest
+          ports:
+            - containerPort: 3002
             - containerPort: 3000
           volumeMounts:
             - name: workspace-volume
@@ -64,6 +80,10 @@ spec:
       name: ws
       port: 3001
       targetPort: 3001
+    - protocol: TCP
+      name: ws-worker
+      port: 3002
+      targetPort: 3002
     - protocol: TCP
       name: user
       port: 3000
