@@ -81,10 +81,6 @@ spec:
       port: 3001
       targetPort: 3001
     - protocol: TCP
-      name: ws-worker
-      port: 3002
-      targetPort: 3002
-    - protocol: TCP
       name: user
       port: 3000
       targetPort: 3000
